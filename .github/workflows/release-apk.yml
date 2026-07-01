@@ -1,9 +1,21 @@
-name: Build & Release APK
+name: Build & Release Telegram APK
 
 on:
+  workflow_dispatch:           # ← Ручной запуск
+    inputs:
+      version:
+        description: 'Версия релиза (например: 11.5.0 или 11.5.0-beta1)'
+        required: true
+        default: '11.5.0'
+      prerelease:
+        description: 'Это пре-релиз? (beta/rc)'
+        required: false
+        default: 'false'
+        type: boolean
+
   push:
     tags:
-      - 'v*'          # Триггерится только при создании тега v1.2.3
+      - 'v*'                   # Можно оставить на случай тегов
 
 jobs:
   build:
@@ -21,10 +33,6 @@ jobs:
         distribution: 'temurin'
         java-version: '17'
 
-    - name: Extract version from tag
-      id: version
-      run: echo "VERSION=${GITHUB_REF#refs/tags/v}" >> $GITHUB_ENV
-
     - name: Build Release APK
       run: |
         ./gradlew :TMessagesProj:assembleRelease --stacktrace
@@ -32,17 +40,14 @@ jobs:
     - name: Create Release
       uses: softprops/action-gh-release@v2
       with:
-        tag_name: ${{ github.ref }}
-        name: Telegram Android v${{ env.VERSION }}
+        tag_name: v${{ inputs.version }}
+        name: Telegram Android v${{ inputs.version }}
         body: |
-          **Версия:** v${{ env.VERSION }}
+          **Версия:** v${{ inputs.version }}
           
-          Автоматическая сборка через GitHub Actions.
-          
-          - APK (Release)
-          - Полная история изменений: [Commits](https://github.com/\( {{ github.repository }}/compare/ \){{ github.event.before }}...${{ github.sha }})
+          Сборка запущена вручную через GitHub Actions.
         draft: false
-        prerelease: false
+        prerelease: ${{ inputs.prerelease }}
         files: |
           TMessagesProj/build/outputs/apk/release/*.apk
       env:
