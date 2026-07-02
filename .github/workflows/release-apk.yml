@@ -1,25 +1,23 @@
 name: Build & Release Telegram APK
 
 on:
-  workflow_dispatch:           # ← Ручной запуск
+  workflow_dispatch:
     inputs:
       version:
-        description: 'Версия релиза (например: 11.5.0 или 11.5.0-beta1)'
+        description: 'Версия (например: 1.0.0 или 11.5.0)'
         required: true
-        default: '11.5.0'
+        default: '1.0.0'
       prerelease:
-        description: 'Это пре-релиз? (beta/rc)'
+        description: 'Пре-релиз?'
         required: false
-        default: 'false'
+        default: false
         type: boolean
-
-  push:
-    tags:
-      - 'v*'                   # Можно оставить на случай тегов
 
 jobs:
   build:
     runs-on: ubuntu-latest
+    permissions:
+      contents: write     # ← Важно для создания релизов
 
     steps:
     - name: Checkout code
@@ -35,20 +33,28 @@ jobs:
 
     - name: Build Release APK
       run: |
-        ./gradlew :TMessagesProj:assembleRelease --stacktrace
+        echo "Building Release APK..."
+        ./gradlew :TMessagesProj:assembleRelease --stacktrace || echo "Release build failed, trying Debug..."
+        ./gradlew :TMessagesProj:assembleDebug --stacktrace
 
-    - name: Create Release
+    - name: Upload artifacts (always)
+      uses: actions/upload-artifact@v4
+      with:
+        name: Telegram-APKs
+        path: |
+          TMessagesProj/build/outputs/apk/**/*.apk
+        if-no-files-found: warn
+
+    - name: Create Release (only if Release APK exists)
+      if: success() && hashFiles('TMessagesProj/build/outputs/apk/release/*.apk') != ''
       uses: softprops/action-gh-release@v2
       with:
         tag_name: v${{ inputs.version }}
         name: Telegram Android v${{ inputs.version }}
         body: |
-          **Версия:** v${{ inputs.version }}
-          
-          Сборка запущена вручную через GitHub Actions.
+          Автоматическая сборка v${{ inputs.version }}
         draft: false
         prerelease: ${{ inputs.prerelease }}
-        files: |
-          TMessagesProj/build/outputs/apk/release/*.apk
+        files: TMessagesProj/build/outputs/apk/release/*.apk
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
