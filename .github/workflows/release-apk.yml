@@ -1,60 +1,81 @@
-name: Build & Release Telegram APK
+name: Build Zertgram APK
 
 on:
+  push:
+    branches: [ main, master ]
   workflow_dispatch:
     inputs:
       version:
-        description: 'Версия (например: 1.0.0 или 11.5.0)'
+        description: 'Версия релиза (например: 1.0.1 или 11.5.0)'
         required: true
-        default: '1.0.0'
+        default: '1.0.1'
       prerelease:
-        description: 'Пре-релиз?'
+        description: 'Это пре-релиз (beta/rc)?'
         required: false
         default: false
         type: boolean
 
+permissions:
+  contents: write
+
 jobs:
   build:
-    runs-on: ubuntu-latest
-    permissions:
-      contents: write     # ← Важно для создания релизов
+    runs-on: ubuntu-24.04
 
     steps:
-    - name: Checkout code
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Free up disk space
+        run: |
+          echo "Cleaning up disk space..."
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h
 
-    - name: Set up JDK 17
-      uses: actions/setup-java@v4
-      with:
-        distribution: 'temurin'
-        java-version: '17'
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: Build Release APK
-      run: |
-        echo "Building Release APK..."
-        ./gradlew :TMessagesProj:assembleRelease --stacktrace || echo "Release build failed, trying Debug..."
-        ./gradlew :TMessagesProj:assembleDebug --stacktrace
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: 17
 
-    - name: Upload artifacts (always)
-      uses: actions/upload-artifact@v4
-      with:
-        name: Telegram-APKs
-        path: |
-          TMessagesProj/build/outputs/apk/**/*.apk
-        if-no-files-found: warn
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
 
-    - name: Create Release (only if Release APK exists)
-      if: success() && hashFiles('TMessagesProj/build/outputs/apk/release/*.apk') != ''
-      uses: softprops/action-gh-release@v2
-      with:
-        tag_name: v${{ inputs.version }}
-        name: Telegram Android v${{ inputs.version }}
-        body: |
-          Автоматическая сборка v${{ inputs.version }}
-        draft: false
-        prerelease: ${{ inputs.prerelease }}
-        files: TMessagesProj/build/outputs/apk/release/*.apk
-      env:
-        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Make gradlew executable
+        run: chmod +x gradlew
+
+      - name: Build Zertgram Release
+        run: ./gradlew :TMessagesProj_App:assembleAfatRelease --no-daemon --stacktrace
+
+      - name: Find and Rename APK
+        run: |
+          APK_FILE=$(find TMessagesProj_App/build/outputs/apk -name "*.apk" | head -n 1)
+          if [ -f "$APK_FILE" ]; then
+            mv "$APK_FILE" Zertgram.apk
+            echo "✅ APK successfully renamed to Zertgram.apk"
+            ls -la Zertgram.apk
+          else
+            echo "❌ APK not found!"
+            find TMessagesProj_App/build/outputs/apk -type f || true
+            exit 1
+          fi
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ inputs.version }}
+          name: Zertgram v${{ inputs.version }}
+          draft: false
+          prerelease: ${{ inputs.prerelease }}
+          files: Zertgram.apk
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Upload Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Zertgram-APK
+          path: Zertgram.apk
